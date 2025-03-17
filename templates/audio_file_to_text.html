@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio File to Text</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        @keyframes buttonClick {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.95); }
+            100% { transform: scale(1); }
+        }
+        .button-click-animation {
+            animation: buttonClick 0.2s;
+        }
+    </style>
+</head>
+<body>
+    <h1>Audio File to Text</h1>
+
+    <form id="uploadForm" enctype="multipart/form-data">
+        <label for="audioFile">Upload Audio File:</label>
+        <input type="file" name="audioFile" id="audioFile" accept="audio/*" required>
+        <label for="start_time">Start Time (seconds):</label>
+        <input type="number" name="start_time" id="start_time" min="0">
+        <label for="end_time">End Time (seconds):</label>
+        <input type="number" name="end_time" id="end_time" min="0">
+        <button type="submit" class="convert-button">Convert Audio to Text</button>
+    </form>
+
+    <div class="text-area-container">
+        <h3>Text Output:</h3>
+        <textarea id="outputText" rows="10" cols="50" readonly></textarea>
+    </div>
+
+    <div class="button-container">
+        <label for="target_lang">Translate to:</label>
+        <select id="target_lang">
+            <option value="ta">Tamil</option>
+            <option value="en">English</option>
+            <option value="hi">Hindi</option>
+            <option value="es">Spanish</option>
+        </select>
+        <button class="translate-button" onclick="translateText()">Translate</button>
+        <button class="speak-button" id="speakButton" onclick="speakText()">🔊 Listen to Text</button>
+        <button class="download-button" onclick="downloadText()">Download Text</button>
+    </div>
+
+    <div class="history-section">
+        <h2>History & Recent Files</h2>
+        <ul class="history-list" id="historyList">
+            <!-- History items will be dynamically added here -->
+        </ul>
+    </div>
+
+    <script>
+        document.getElementById("uploadForm").onsubmit = async function(event) {
+            event.preventDefault();
+            let formData = new FormData(this);
+
+            let response = await fetch("/convert-audio", {
+                method: "POST",
+                body: formData
+            });
+
+            let result = await response.json();
+            if (result.converted_text) {
+                document.getElementById("outputText").value = result.converted_text;
+                addToHistory(`Converted_${Date.now()}.txt`);
+            } else {
+                alert("Error: " + result.error);
+            }
+        };
+
+        async function translateText() {
+            let text = document.getElementById("outputText").value;
+            if (!text) {
+                alert("No text to translate!");
+                return;
+            }
+
+            let target_lang = document.getElementById("target_lang").value;
+            let response = await fetch("/translate-text", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: text, target_lang: target_lang })
+            });
+
+            let result = await response.json();
+            document.getElementById("outputText").value = result.translated_text;
+            addToHistory(`Translated_${Date.now()}.txt`);
+        }
+
+        let audioPlayer = null;
+        let isMuted = false;
+
+        async function speakText() {
+            let text = document.getElementById("outputText").value;
+            if (!text) {
+                alert("No text to speak!");
+                return;
+            }
+
+            if (audioPlayer && !audioPlayer.paused) {
+                isMuted = !isMuted;
+                audioPlayer.muted = isMuted;
+                document.getElementById("speakButton").classList.toggle("mute");
+                return;
+            }
+
+            let lang = document.getElementById("target_lang").value || "en";
+            let response = await fetch("/text-to-speech", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: text, lang: lang })
+            });
+
+            if (response.ok) {
+                let audioBlob = await response.blob();
+                let audioUrl = URL.createObjectURL(audioBlob);
+                audioPlayer = new Audio(audioUrl);
+                audioPlayer.play();
+                document.getElementById("speakButton").classList.remove("mute");
+            } else {
+                alert("Error generating speech!");
+            }
+        }
+
+        async function downloadText() {
+            let text = document.getElementById("outputText").value;
+            if (!text) {
+                alert("No text to download!");
+                return;
+            }
+
+            let filename = `output_${Date.now()}.txt`;
+            let response = await fetch("/download-text", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: text, filename: filename })
+            });
+
+            if (response.ok) {
+                let blob = await response.blob();
+                let url = URL.createObjectURL(blob);
+                let link = document.createElement("a");
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                alert("Download successful!");
+            } else {
+                alert("Error downloading text!");
+            }
+        }
+
+        function addToHistory(filename) {
+            let historyList = document.getElementById("historyList");
+            let listItem = document.createElement("li");
+            listItem.textContent = filename;
+            historyList.appendChild(listItem);
+        }
+
+        // Add animation to buttons
+        document.querySelectorAll('button').forEach(button => {
+            button.addEventListener('click', () => {
+                button.classList.add('button-click-animation');
+                setTimeout(() => {
+                    button.classList.remove('button-click-animation');
+                }, 200);
+            });
+        });
+    </script>
+</body>
+</html>

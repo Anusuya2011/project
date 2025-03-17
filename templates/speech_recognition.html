@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speech Recognition</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        @keyframes buttonClick {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.95); }
+            100% { transform: scale(1); }
+        }
+        .button-click-animation {
+            animation: buttonClick 0.2s;
+        }
+    </style>
+</head>
+<body>
+    <h1>Speech Recognition</h1>
+    <div class="speech-container">
+        <!-- Left Side: Speech to Text -->
+        <div class="left">
+            <h3>Speech to Text:</h3>
+            <textarea id="speechText" rows="10" cols="40" readonly></textarea>
+            <button id="startButton">Start Speech Recognition</button>
+            <button id="stopButton" disabled>Stop Speech Recognition</button>
+        </div>
+
+        <!-- Right Side: Translation -->
+        <div class="right">
+            <h3>Translation:</h3>
+            <textarea id="translatedText" rows="10" cols="40" readonly></textarea>
+            <label for="target_lang">Translate to:</label>
+            <select id="target_lang">
+                <option value="ta">Tamil</option>
+                <option value="en">English</option>
+                <option value="hi">Hindi</option>
+                <option value="es">Spanish</option>
+            </select>
+            <button class="translate-button" onclick="translateText()">Translate</button>
+            <button class="speak-button" id="speakButton" onclick="speakText()">🔊 Listen to Translated Text</button>
+        </div>
+    </div>
+
+    <script>
+        let recognition;
+        let isRecognizing = false;
+        let speechTextArea = document.getElementById("speechText");
+        let audioPlayer = null;
+        let isMuted = false;
+
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = function (event) {
+                let speechText = "";
+                for (let i = 0; i < event.results.length; i++) {
+                    speechText += event.results[i][0].transcript;
+                }
+                speechTextArea.value = speechText;
+                translateText(speechText);
+            };
+
+            recognition.onend = function () {
+                isRecognizing = false;
+                document.getElementById("startButton").disabled = false;
+                document.getElementById("stopButton").disabled = true;
+            };
+        } else {
+            alert("Your browser does not support Speech Recognition.");
+        }
+
+        document.getElementById("startButton").onclick = function () {
+            if (recognition && !isRecognizing) {
+                recognition.start();
+                isRecognizing = true;
+                document.getElementById("startButton").disabled = true;
+                document.getElementById("stopButton").disabled = false;
+            }
+        };
+
+        document.getElementById("stopButton").onclick = function () {
+            if (recognition && isRecognizing) {
+                recognition.stop();
+                isRecognizing = false;
+                document.getElementById("startButton").disabled = false;
+                document.getElementById("stopButton").disabled = true;
+            }
+        };
+
+        async function translateText(text) {
+            let target_lang = document.getElementById("target_lang").value;
+            let response = await fetch("/translate-text", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: text, target_lang: target_lang })
+            });
+
+            let result = await response.json();
+            document.getElementById("translatedText").value = result.translated_text;
+        }
+
+        async function speakText() {
+            let text = document.getElementById("translatedText").value;
+            if (!text) {
+                alert("No text to speak!");
+                return;
+            }
+
+            if (audioPlayer && !audioPlayer.paused) {
+                isMuted = !isMuted;
+                audioPlayer.muted = isMuted;
+                document.getElementById("speakButton").classList.toggle("mute");
+                return;
+            }
+
+            let lang = document.getElementById("target_lang").value;
+            let response = await fetch("/text-to-speech", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: text, lang: lang })
+            });
+
+            if (response.ok) {
+                let audioBlob = await response.blob();
+                let audioUrl = URL.createObjectURL(audioBlob);
+                audioPlayer = new Audio(audioUrl);
+                audioPlayer.play();
+                document.getElementById("speakButton").classList.remove("mute");
+            } else {
+                alert("Error generating speech!");
+            }
+        }
+
+        // Add animation to buttons
+        document.querySelectorAll('button').forEach(button => {
+            button.addEventListener('click', () => {
+                button.classList.add('button-click-animation');
+                setTimeout(() => {
+                    button.classList.remove('button-click-animation');
+                }, 200);
+            });
+        });
+    </script>
+</body>
+</html>
